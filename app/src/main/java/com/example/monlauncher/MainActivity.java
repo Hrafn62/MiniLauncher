@@ -276,6 +276,8 @@ public class MainActivity extends AppCompatActivity {
         appsList = new ArrayList<>();
         PackageManager pm = getPackageManager();
         SharedPreferences customNames = getSharedPreferences("CustomNames", Context.MODE_PRIVATE);
+
+        // 1. Apps standards
         Intent intent = new Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
         for (ResolveInfo ri : activities) {
@@ -284,6 +286,26 @@ public class MainActivity extends AppCompatActivity {
             app.label = ri.loadLabel(pm).toString();
             app.customLabel = customNames.getString(app.packageName, null);
             if (!listContainsPackage(appsList, app.packageName)) appsList.add(app);
+        }
+
+        // 2. Détection étendue pour PWAs (Vivaldi, Chrome, etc.)
+        List<android.content.pm.PackageInfo> packages = pm.getInstalledPackages(0);
+        for (android.content.pm.PackageInfo packageInfo : packages) {
+            String pkgName = packageInfo.packageName.toLowerCase();
+            // On cherche "webapk" (Chrome/Vivaldi) ou les sous-packages Vivaldi
+            if (pkgName.contains("webapk") || pkgName.startsWith("com.vivaldi")) {
+                if (!listContainsPackage(appsList, packageInfo.packageName)) {
+                    AppInfo app = new AppInfo();
+                    app.packageName = packageInfo.packageName;
+                    app.label = packageInfo.applicationInfo.loadLabel(pm).toString();
+                    app.customLabel = customNames.getString(app.packageName, null);
+
+                    // On évite d'ajouter le navigateur lui-même deux fois s'il est déjà là
+                    if (!app.label.equalsIgnoreCase("Vivaldi")) {
+                        appsList.add(app);
+                    }
+                }
+            }
         }
         Collections.sort(appsList, (a, b) -> a.getDisplayName().compareToIgnoreCase(b.getDisplayName()));
     }
