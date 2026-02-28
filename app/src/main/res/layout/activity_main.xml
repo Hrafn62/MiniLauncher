@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <LinearLayout
+        android:id="@+id/home_screen"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingLeft="40dp"
+        android:paddingTop="60dp"
+        android:background="@android:color/transparent">
+
+        <TextClock
+            android:id="@+id/home_clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format24Hour="HH:mm"
+            android:format12Hour="h:mm"
+            android:textColor="#FFFFFF"
+            android:textSize="80sp"
+            android:fontFamily="sans-serif-light" />
+
+        <TextClock
+            android:id="@+id/home_date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format24Hour="EEE. d MMM."
+            android:format12Hour="EEE. d MMM."
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:alpha="0.7"
+            android:layout_marginTop="-5dp" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/apps_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#CC000000"
+        android:visibility="gone"
+        android:paddingTop="80dp">
+
+        <EditText
+            android:id="@+id/app_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Rechercher..."
+            android:textColor="#FFFFFF"
+            android:textColorHint="#88FFFFFF"
+            android:background="@android:color/transparent"
+            android:padding="20dp"
+            android:layout_marginLeft="20dp"
+            android:maxLines="1"
+            android:inputType="text"
+            android:imeOptions="actionSearch"/>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/apps_list"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingLeft="40dp"/>
+    </LinearLayout>
+
+</FrameLayout>
