@@ -6,17 +6,20 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.TextClock;
+import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -37,7 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private AppAdapter appAdapter;
 
     private float x1, x2, y1, y2;
-    private static final int MIN_DISTANCE = 100;
+    private static final int MIN_DISTANCE = 150;
     private long lastClickTime = 0;
     private static final long DOUBLE_CLICK_TIME_DELTA = 300;
 
@@ -45,7 +48,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // On garde juste le wallpaper derrière
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
         setContentView(R.layout.activity_main);
         getWindow().setBackgroundDrawableResource(android.R.color.transparent);
@@ -79,37 +81,110 @@ public class MainActivity extends AppCompatActivity {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (appsContainer.getVisibility() == View.VISIBLE) showHomeScreen();
+                if (appsContainer.getVisibility() == View.VISIBLE) {
+                    if (appSearch.getText().length() > 0) {
+                        appSearch.setText("");
+                    } else {
+                        showHomeScreen();
+                    }
+                }
             }
         });
     }
 
     private void setupScrollToDismiss() {
-        recyclerView.addOnItemTouchListener(new RecyclerView.SimpleOnItemTouchListener() {
-            private float startY = 0;
+        recyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
-            public boolean onInterceptTouchEvent(@NonNull RecyclerView rv, @NonNull MotionEvent e) {
-                switch (e.getAction()) {
-                    case MotionEvent.ACTION_DOWN:
-                        startY = e.getY();
-                        break;
-                    case MotionEvent.ACTION_MOVE:
-                        float deltaY = e.getY() - startY;
-                        if (!rv.canScrollVertically(-1) && deltaY > 150) {
-                            showHomeScreen();
-                            return true;
-                        }
-                        break;
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                if (!recyclerView.canScrollVertically(-1) && dy < -50) {
+                    showHomeScreen();
                 }
-                return false;
             }
         });
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        switch (event.getAction()) {
+            case MotionEvent.ACTION_DOWN:
+                x1 = event.getX();
+                y1 = event.getY();
+                break;
+            case MotionEvent.ACTION_UP:
+                x2 = event.getX();
+                y2 = event.getY();
+                float deltaX = x2 - x1;
+                float deltaY = y2 - y1;
+
+                if (appsContainer.getVisibility() == View.GONE) {
+                    if (deltaY < -MIN_DISTANCE && Math.abs(deltaX) < 200) {
+                        showAppsList();
+                        return true;
+                    }
+                    if (Math.abs(deltaX) > MIN_DISTANCE && Math.abs(deltaY) < 200) {
+                        if (deltaX < 0) handleGesture("swipe_left_action");
+                        else handleGesture("swipe_right_action");
+                        return true;
+                    }
+                } else {
+                    if (deltaY > MIN_DISTANCE && !recyclerView.canScrollVertically(-1)) {
+                        showHomeScreen();
+                        return true;
+                    }
+                }
+                break;
+        }
+        return super.dispatchTouchEvent(event);
+    }
+
+    private void showAppsList() {
+        appsContainer.setVisibility(View.VISIBLE);
+        appsContainer.setAlpha(0f);
+        appsContainer.setTranslationY(500f);
+
+        appsContainer.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(300)
+                .withEndAction(() -> {
+                    appSearch.requestFocus();
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) imm.showSoftInput(appSearch, InputMethodManager.SHOW_IMPLICIT);
+                })
+                .start();
+
+        homeScreen.animate().alpha(0f).setDuration(200).start();
+    }
+
+    private void showHomeScreen() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(appSearch.getWindowToken(), 0);
+
+        appsContainer.animate()
+                .alpha(0f)
+                .translationY(500f)
+                .setDuration(250)
+                .withEndAction(() -> {
+                    appsContainer.setVisibility(View.GONE);
+                    homeScreen.setVisibility(View.VISIBLE);
+                    homeScreen.setAlpha(1f);
+                    appSearch.setText("");
+                })
+                .start();
     }
 
     private void applySettingsAndFavorites() {
         SharedPreferences config = getSharedPreferences("LauncherConfig", Context.MODE_PRIVATE);
         SharedPreferences favs = getSharedPreferences("Favs", Context.MODE_PRIVATE);
         SharedPreferences customNames = getSharedPreferences("CustomNames", Context.MODE_PRIVATE);
+
+        String alignPref = config.getString("alignment", "Gauche");
+        int gravity;
+        switch (alignPref) {
+            case "Centré": gravity = Gravity.CENTER_HORIZONTAL; break;
+            case "Droite": gravity = Gravity.END; break;
+            default: gravity = Gravity.START; break;
+        }
 
         TextClock clock = findViewById(R.id.home_clock);
         TextClock dateView = findViewById(R.id.home_date);
@@ -119,19 +194,18 @@ public class MainActivity extends AppCompatActivity {
         if (clock != null) {
             if (clock.getParent() != null) ((android.view.ViewGroup) clock.getParent()).removeView(clock);
             setupClockShortcut(clock);
+            clock.setGravity(gravity);
             homeScreen.addView(clock);
         }
 
         if (dateView != null) {
             if (dateView.getParent() != null) ((android.view.ViewGroup) dateView.getParent()).removeView(dateView);
+            dateView.setGravity(gravity);
             homeScreen.addView(dateView);
         }
 
-        // Espaceur pour pousser les favoris vers le bas
         View spacer = new View(this);
-        LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(0, 0, 1.0f);
-        spacer.setLayoutParams(spacerParams);
-        homeScreen.addView(spacer);
+        homeScreen.addView(spacer, new LinearLayout.LayoutParams(0, 0, 1.0f));
 
         int count = config.getInt("fav_count", 4);
         for (int i = 1; i <= count; i++) {
@@ -145,42 +219,53 @@ public class MainActivity extends AppCompatActivity {
             tv.setTextColor(0xFFFFFFFF);
             tv.setTextSize(26);
             tv.setPadding(0, 25, 0, 25);
-            tv.setGravity(Gravity.START);
+
+            tv.setGravity(gravity);
+            // CORRECTION ICI : Utilisation de LinearLayout.LayoutParams
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            tv.setLayoutParams(params);
 
             tv.setOnClickListener(v -> {
                 if (!pkg.isEmpty()) {
                     Intent intent = getPackageManager().getLaunchIntentForPackage(pkg);
                     if (intent != null) startActivity(intent);
-                } else {
-                    openAppPicker(key);
-                }
+                } else openAppPicker(key);
             });
-            tv.setOnLongClickListener(v -> {
-                openAppPicker(key);
-                return true;
-            });
+            tv.setOnLongClickListener(v -> { openAppPicker(key); return true; });
             homeScreen.addView(tv);
         }
+        homeScreen.addView(new View(this), new LinearLayout.LayoutParams(1, 100));
+    }
 
-        View bottomMargin = new View(this);
-        homeScreen.addView(bottomMargin, new LinearLayout.LayoutParams(1, 100));
+    private void handleGesture(String configKey) {
+        SharedPreferences config = getSharedPreferences("LauncherConfig", Context.MODE_PRIVATE);
+        String action = config.getString(configKey, "Aucun");
+
+        if ("Appareil Photo".equals(action)) {
+            Intent intent = getPackageManager().getLaunchIntentForPackage("com.google.android.GoogleCamera");
+            if (intent == null) {
+                intent = new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+            }
+            try {
+                startActivity(intent);
+            } catch (Exception e) {
+                Toast.makeText(this, "Erreur appareil photo", Toast.LENGTH_SHORT).show();
+            }
+        } else if ("Téléphone".equals(action)) {
+            try { startActivity(new Intent(Intent.ACTION_DIAL)); } catch (Exception e) {}
+        }
     }
 
     private void setupClockShortcut(TextClock clock) {
         clock.setOnClickListener(v -> {
             SharedPreferences prefs = getSharedPreferences("LauncherConfig", Context.MODE_PRIVATE);
-            String shortcutPkg = prefs.getString("clock_shortcut_pkg", "");
-            if (!shortcutPkg.isEmpty()) {
-                Intent launchIntent = getPackageManager().getLaunchIntentForPackage(shortcutPkg);
-                if (launchIntent != null) startActivity(launchIntent);
-            } else {
-                openAppPicker("clock_shortcut");
-            }
+            String pkg = prefs.getString("clock_shortcut_pkg", "");
+            if (!pkg.isEmpty()) startActivity(getPackageManager().getLaunchIntentForPackage(pkg));
+            else openAppPicker("clock_shortcut");
         });
-        clock.setOnLongClickListener(v -> {
-            openAppPicker("clock_shortcut");
-            return true;
-        });
+        clock.setOnLongClickListener(v -> { openAppPicker("clock_shortcut"); return true; });
     }
 
     private void openAppPicker(String key) {
@@ -197,15 +282,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void filterApps(String query) {
-        List<AppInfo> filteredList = new ArrayList<>();
+        List<AppInfo> filtered = new ArrayList<>();
         if (fullAppsList != null) {
             for (AppInfo app : fullAppsList) {
-                if (app.getDisplayName().toLowerCase().contains(query.toLowerCase())) {
-                    filteredList.add(app);
-                }
+                if (app.getDisplayName().toLowerCase().contains(query.toLowerCase())) filtered.add(app);
             }
         }
-        if (appAdapter != null) appAdapter.updateList(filteredList);
+        if (appAdapter != null) appAdapter.updateList(filtered);
     }
 
     private void refreshAppsList() {
@@ -214,62 +297,7 @@ public class MainActivity extends AppCompatActivity {
         if (appAdapter == null) {
             appAdapter = new AppAdapter(appsList);
             recyclerView.setAdapter(appAdapter);
-        } else {
-            appAdapter.updateList(appsList);
-        }
-    }
-
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent event) {
-        if (appsContainer.getVisibility() == View.GONE) {
-            switch (event.getAction()) {
-                case MotionEvent.ACTION_DOWN:
-                    x1 = event.getX();
-                    y1 = event.getY();
-                    break;
-                case MotionEvent.ACTION_UP:
-                    x2 = event.getX();
-                    y2 = event.getY();
-                    float deltaX = x2 - x1;
-                    float deltaY = y2 - y1;
-                    if (Math.abs(deltaX) > MIN_DISTANCE && Math.abs(deltaY) < 150) {
-                        if (deltaX < 0) handleGesture("swipe_left_action");
-                        else handleGesture("swipe_right_action");
-                        return true;
-                    } else if (deltaY < -MIN_DISTANCE && Math.abs(deltaX) < 150) {
-                        showAppsList();
-                        return true;
-                    }
-                    break;
-            }
-        }
-        return super.dispatchTouchEvent(event);
-    }
-
-    private void handleGesture(String configKey) {
-        SharedPreferences config = getSharedPreferences("LauncherConfig", Context.MODE_PRIVATE);
-        String action = config.getString(configKey, "Aucun");
-        if ("Appareil Photo".equals(action)) {
-            try { startActivity(new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)); } catch (Exception e) {}
-        } else if ("Téléphone".equals(action)) {
-            try { startActivity(new Intent(Intent.ACTION_DIAL)); } catch (Exception e) {}
-        }
-    }
-
-    private void showAppsList() {
-        appsContainer.setVisibility(View.VISIBLE);
-        homeScreen.setVisibility(View.GONE);
-        appSearch.setText("");
-        appSearch.requestFocus();
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.showSoftInput(appSearch, InputMethodManager.SHOW_IMPLICIT);
-    }
-
-    private void showHomeScreen() {
-        appsContainer.setVisibility(View.GONE);
-        homeScreen.setVisibility(View.VISIBLE);
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.hideSoftInputFromWindow(appSearch.getWindowToken(), 0);
+        } else appAdapter.updateList(appsList);
     }
 
     private void loadApps() {
@@ -277,7 +305,6 @@ public class MainActivity extends AppCompatActivity {
         PackageManager pm = getPackageManager();
         SharedPreferences customNames = getSharedPreferences("CustomNames", Context.MODE_PRIVATE);
 
-        // 1. Apps standards
         Intent intent = new Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER);
         List<ResolveInfo> activities = pm.queryIntentActivities(intent, 0);
         for (ResolveInfo ri : activities) {
@@ -288,22 +315,15 @@ public class MainActivity extends AppCompatActivity {
             if (!listContainsPackage(appsList, app.packageName)) appsList.add(app);
         }
 
-        // 2. Détection étendue pour PWAs (Vivaldi, Chrome, etc.)
         List<android.content.pm.PackageInfo> packages = pm.getInstalledPackages(0);
         for (android.content.pm.PackageInfo packageInfo : packages) {
             String pkgName = packageInfo.packageName.toLowerCase();
-            // On cherche "webapk" (Chrome/Vivaldi) ou les sous-packages Vivaldi
             if (pkgName.contains("webapk") || pkgName.startsWith("com.vivaldi")) {
                 if (!listContainsPackage(appsList, packageInfo.packageName)) {
                     AppInfo app = new AppInfo();
                     app.packageName = packageInfo.packageName;
                     app.label = packageInfo.applicationInfo.loadLabel(pm).toString();
-                    app.customLabel = customNames.getString(app.packageName, null);
-
-                    // On évite d'ajouter le navigateur lui-même deux fois s'il est déjà là
-                    if (!app.label.equalsIgnoreCase("Vivaldi")) {
-                        appsList.add(app);
-                    }
+                    if (!app.label.equalsIgnoreCase("Vivaldi")) appsList.add(app);
                 }
             }
         }
